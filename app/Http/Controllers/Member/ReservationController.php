@@ -24,7 +24,7 @@ class ReservationController extends Controller
     /**
      * Daftar riwayat reservasi member.
      */
-    public function index(Request $request)
+    public function index()
     {
         // Auto-cancel expired reservations before showing the list
         $this->cancelExpiredReservations();
@@ -33,13 +33,6 @@ class ReservationController extends Controller
             ->with(['slotTimes', 'tables'])
             ->latest()
             ->get();
-
-        // If AJAX request, return only the content
-        if ($request->ajax()) {
-            return response()->json([
-                'html' => view('pages.member.reservation.index', compact('reservations'))->render()
-            ]);
-        }
 
         return view('pages.member.reservation.index', compact('reservations'));
     }
@@ -238,49 +231,6 @@ class ReservationController extends Controller
         $reservation->refresh();
 
         return view('pages.member.reservation.status', compact('reservation'));
-    }
-
-    /**
-     * AJAX endpoint for status checking
-     */
-    public function statusCheck(Reservation $reservation)
-    {
-        // Check if user owns this reservation
-        if ($reservation->user_id !== 1) {
-            abort(403);
-        }
-
-        $oldStatus = $reservation->status;
-
-        // Auto-cancel if expired
-        $this->checkAndCancelExpiredReservation($reservation);
-
-        // Refresh reservation data
-        $reservation->refresh();
-
-        $statusChanged = $oldStatus !== $reservation->status;
-
-        $message = '';
-        if ($statusChanged) {
-            switch ($reservation->status) {
-                case 'confirmed':
-                    $message = 'Reservasi telah dikonfirmasi! Silakan lakukan pembayaran.';
-                    break;
-                case 'rejected':
-                    $message = 'Reservasi ditolak karena tidak ada meja yang tersedia.';
-                    break;
-                case 'cancelled':
-                    $message = 'Reservasi dibatalkan karena melewati batas waktu pembayaran.';
-                    break;
-            }
-        }
-
-        return response()->json([
-            'status' => $reservation->status,
-            'status_changed' => $statusChanged,
-            'message' => $message,
-            'payment_deadline' => $reservation->status === 'confirmed' ? $reservation->created_at->addHour()->toISOString() : null
-        ]);
     }
 
     /**

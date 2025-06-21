@@ -173,7 +173,7 @@ class ReservationService
             $date = now()->format('Y-m-d');
         }
 
-        $query = Reservation::where('reservation_date', $date);
+        $query = Reservation::where('reservation_date', $date)->get();
 
         return [
             'total' => $query->count(),
