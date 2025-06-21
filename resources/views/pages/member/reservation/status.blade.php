@@ -13,11 +13,11 @@
                         class="text-2xl font-bold {{ $reservation->status === 'pending' ? 'text-yellow-800' : ($reservation->status === 'confirmed' ? 'text-blue-800' : ($reservation->status === 'paid' ? 'text-green-800' : ($reservation->status === 'rejected' ? 'text-red-800' : 'text-gray-800'))) }}">
                         @switch($reservation->status)
                             @case('pending')
-                                MENUNGGU KONFIRMASI...
+                                SEDANG DIPROSES OTOMATIS...
                             @break
 
                             @case('confirmed')
-                                PROSES PEMBAYARAN DP...
+                                RESERVASI DIKONFIRMASI - LAKUKAN PEMBAYARAN
                             @break
 
                             @case('paid')
@@ -25,7 +25,7 @@
                             @break
 
                             @case('rejected')
-                                RESERVASI DITOLAK ❌
+                                RESERVASI DITOLAK OTOMATIS ❌
                             @break
 
                             @case('cancelled')
@@ -38,7 +38,8 @@
                     </h1>
 
                     @if ($reservation->status === 'pending')
-                        <p class="text-yellow-700 mt-2">Jika belum direspons dalam 1 jam, hubungi WhatsApp kami.</p>
+                        <p class="text-yellow-700 mt-2">Sistem sedang memproses reservasi Anda secara otomatis...</p>
+                        <p class="text-yellow-600 text-sm mt-1">Halaman akan refresh otomatis dalam beberapa detik</p>
                     @elseif($reservation->status === 'confirmed')
                         @php
                             $paymentDeadline = $reservation->created_at->addHour();
@@ -46,9 +47,9 @@
                         @endphp
 
                         @if ($timeRemaining > 0)
-                            <p class="text-blue-700 mt-2">Pembayaran harus dilakukan sebelum batas waktu:</p>
+                            <p class="text-blue-700 mt-2">Reservasi telah dikonfirmasi otomatis! Meja telah ditetapkan.</p>
                             <p class="text-blue-800 font-semibold">
-                                Batas: {{ $paymentDeadline->translatedFormat('l, d M Y (H:i)') }}
+                                Batas pembayaran: {{ $paymentDeadline->translatedFormat('l, d M Y (H:i)') }}
                             </p>
                             <p class="text-blue-600 text-sm mt-1">
                                 Sisa waktu: {{ $timeRemaining }} menit
@@ -58,7 +59,10 @@
                                 otomatis.</p>
                         @endif
                     @elseif($reservation->status === 'paid')
-                        <p class="text-green-700 mt-2">Terima kasih! Reservasi Anda telah dikonfirmasi.</p>
+                        <p class="text-green-700 mt-2">Terima kasih! Reservasi Anda telah dikonfirmasi dan dibayar.</p>
+                    @elseif($reservation->status === 'rejected')
+                        <p class="text-red-700 mt-2">Maaf, reservasi ditolak otomatis karena tidak ada meja yang tersedia
+                            untuk slot waktu yang dipilih.</p>
                     @elseif($reservation->status === 'cancelled')
                         <p class="text-gray-700 mt-2">Reservasi telah dibatalkan karena melewati batas waktu pembayaran.</p>
                     @endif
@@ -108,8 +112,10 @@
 
                         @if ($reservation->tables->isNotEmpty())
                             <div>
-                                <label class="block text-sm font-medium text-gray-600">Nomor Meja</label>
-                                <p class="text-gray-800 font-semibold">{{ implode(', ', $reservation->table_numbers) }}</p>
+                                <label class="block text-sm font-medium text-gray-600">Nomor Meja (Ditetapkan
+                                    Otomatis)</label>
+                                <p class="text-green-600 font-bold text-lg">Meja
+                                    {{ implode(', ', $reservation->table_numbers) }}</p>
                             </div>
                         @endif
 
@@ -154,6 +160,36 @@
                         @endif
                     </div>
                 </div>
+
+                <!-- Auto Processing Info -->
+                @if ($reservation->status === 'confirmed' && $reservation->tables->isNotEmpty())
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-6 mb-6">
+                        <h3 class="text-lg font-semibold text-green-800 mb-2">✅ Proses Otomatis Berhasil!</h3>
+                        <ul class="text-sm text-green-700 space-y-1">
+                            <li>• Reservasi telah dikonfirmasi secara otomatis</li>
+                            <li>• Meja telah ditetapkan secara otomatis: <strong>Meja
+                                    {{ implode(', ', $reservation->table_numbers) }}</strong></li>
+                            <li>• Silakan lakukan pembayaran DP untuk menyelesaikan reservasi</li>
+                        </ul>
+                    </div>
+                @endif
+
+                @if ($reservation->status === 'rejected')
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+                        <h3 class="text-lg font-semibold text-red-800 mb-2">❌ Reservasi Ditolak Otomatis</h3>
+                        <ul class="text-sm text-red-700 space-y-1">
+                            <li>• Tidak ada meja yang tersedia untuk slot waktu yang dipilih</li>
+                            <li>• Silakan pilih tanggal atau slot waktu yang berbeda</li>
+                            <li>• Atau kurangi jumlah tamu jika memungkinkan</li>
+                        </ul>
+                        <div class="mt-4">
+                            <a href="{{ route('member.reservations.create') }}"
+                                class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors">
+                                Buat Reservasi Baru
+                            </a>
+                        </div>
+                    </div>
+                @endif
 
                 <!-- Payment Form (for confirmed reservations) -->
                 @if ($reservation->status === 'confirmed')
@@ -274,7 +310,16 @@
         </div>
     </div>
 
-    @if ($reservation->status === 'confirmed')
+    @if ($reservation->status === 'pending')
+        @push('scripts')
+            <script>
+                // Auto refresh for pending reservations
+                setTimeout(function() {
+                    location.reload();
+                }, 3000); // Refresh every 3 seconds for pending status
+            </script>
+        @endpush
+    @elseif ($reservation->status === 'confirmed')
         @php
             $paymentDeadline = $reservation->created_at->addHour();
             $timeRemaining = now()->diffInMinutes($paymentDeadline, false);

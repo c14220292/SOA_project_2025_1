@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Permintaan Reservasi')
+@section('title', 'Daftar Reservasi')
 
 @section('content')
     <div class="min-h-screen bg-[#1a1a1a] text-white">
@@ -8,7 +8,7 @@
         <div class="bg-[#8B0000] py-4">
             <div class="container mx-auto px-4 flex items-center">
                 <a href="{{ route('admin.dashboard') }}" class="text-[#D4AF37] text-2xl mr-4">←</a>
-                <h1 class="text-2xl font-bold text-[#D4AF37]">PERMINTAAN RESERVASI</h1>
+                <h1 class="text-2xl font-bold text-[#D4AF37]">DAFTAR RESERVASI</h1>
             </div>
         </div>
 
@@ -30,76 +30,164 @@
                 </div>
             </div>
 
-            <!-- Reservations List -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-                @forelse($reservations as $reservation)
-                    <div class="bg-[#8B0000] rounded-lg p-4">
-                        <h4 class="text-[#D4AF37] font-bold text-lg mb-2">
-                            PESAN {{ $reservation->table_count }} MEJA
-                        </h4>
-                        <div class="text-white text-sm space-y-1 mb-4">
-                            @foreach ($reservation->slotTimes as $slot)
-                                <p>{{ \Carbon\Carbon::parse($slot->start_time)->format('H:i') }} -
-                                    {{ \Carbon\Carbon::parse($slot->end_time)->format('H:i') }}</p>
-                            @endforeach
-                            <p class="font-semibold">{{ $reservation->user->name }}</p>
-                            <p>{{ $reservation->user->email }}</p>
-                            <p class="text-yellow-300">{{ $reservation->guest_count }} orang</p>
-                            @if ($reservation->user->phone)
-                                <p>{{ $reservation->user->phone }}</p>
-                            @endif
-                        </div>
-                        <div class="flex gap-2">
-                            <form method="POST" action="{{ route('admin.reservations.reject', $reservation->id) }}"
-                                class="flex-1">
-                                @csrf
-                                <button type="submit" onclick="return confirm('Yakin ingin menolak reservasi ini?')"
-                                    class="w-full bg-orange-500 text-white py-2 rounded font-semibold hover:bg-orange-600">
-                                    Tolak
-                                </button>
-                            </form>
-                            <button type="button" onclick="showTableSelection({{ $reservation->id }})"
-                                class="flex-1 bg-[#D4AF37] text-[#1a1a1a] py-2 rounded font-semibold hover:bg-yellow-500">
-                                Terima
-                            </button>
-                        </div>
-                    </div>
-                @empty
-                    <div class="col-span-full bg-[#2a2a2a] rounded-lg p-8 text-center">
-                        <p class="text-gray-400">Tidak ada permintaan reservasi untuk tanggal ini</p>
-                    </div>
-                @endforelse
+            <!-- Statistics -->
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+                <div class="bg-gray-600 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-white">{{ $stats['total'] }}</div>
+                    <div class="text-sm text-gray-300">Total</div>
+                </div>
+                <div class="bg-yellow-600 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-white">{{ $stats['pending'] }}</div>
+                    <div class="text-sm text-yellow-100">Pending</div>
+                </div>
+                <div class="bg-blue-600 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-white">{{ $stats['confirmed'] }}</div>
+                    <div class="text-sm text-blue-100">Dikonfirmasi</div>
+                </div>
+                <div class="bg-green-600 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-white">{{ $stats['paid'] }}</div>
+                    <div class="text-sm text-green-100">Dibayar</div>
+                </div>
+                <div class="bg-red-600 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-white">{{ $stats['rejected'] }}</div>
+                    <div class="text-sm text-red-100">Ditolak</div>
+                </div>
+                <div class="bg-gray-500 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-white">{{ $stats['cancelled'] }}</div>
+                    <div class="text-sm text-gray-100">Dibatalkan</div>
+                </div>
             </div>
 
-            <!-- Table Schedule Grid -->
-            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                @php
-                    $timeSlots = \App\Models\SlotTime::where('date', $selectedDate)->orderBy('start_time')->get();
-                @endphp
+            <!-- Reservations by Status -->
+            @foreach (['pending' => 'Menunggu', 'confirmed' => 'Dikonfirmasi', 'paid' => 'Dibayar', 'rejected' => 'Ditolak', 'cancelled' => 'Dibatalkan'] as $status => $label)
+                @if (isset($groupedReservations[$status]) && $groupedReservations[$status]->isNotEmpty())
+                    <div class="mb-8">
+                        <h2 class="text-xl font-bold text-[#D4AF37] mb-4">{{ $label }}
+                            ({{ $groupedReservations[$status]->count() }})</h2>
 
-                @forelse($tables as $table)
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            @foreach ($groupedReservations[$status] as $reservation)
+                                <div class="bg-[#8B0000] rounded-lg p-4">
+                                    <!-- Status Badge -->
+                                    <div class="flex justify-between items-center mb-3">
+                                        <span
+                                            class="px-2 py-1 rounded text-xs font-semibold
+                                            {{ $status === 'pending'
+                                                ? 'bg-yellow-600 text-yellow-100'
+                                                : ($status === 'confirmed'
+                                                    ? 'bg-blue-600 text-blue-100'
+                                                    : ($status === 'paid'
+                                                        ? 'bg-green-600 text-green-100'
+                                                        : ($status === 'rejected'
+                                                            ? 'bg-red-600 text-red-100'
+                                                            : 'bg-gray-600 text-gray-100'))) }}">
+                                            {{ $label }}
+                                        </span>
+                                        <span class="text-xs text-gray-300">
+                                            {{ $reservation->created_at->format('H:i') }}
+                                        </span>
+                                    </div>
+
+                                    <h4 class="text-[#D4AF37] font-bold text-lg mb-2">
+                                        {{ $reservation->table_count }} MEJA - {{ $reservation->guest_count }} ORANG
+                                    </h4>
+
+                                    <div class="text-white text-sm space-y-1 mb-4">
+                                        @foreach ($reservation->slotTimes as $slot)
+                                            <p>{{ \Carbon\Carbon::parse($slot->start_time)->format('H:i') }} -
+                                                {{ \Carbon\Carbon::parse($slot->end_time)->format('H:i') }}</p>
+                                        @endforeach
+                                        <p class="font-semibold">{{ $reservation->user->name }}</p>
+                                        <p>{{ $reservation->user->email }}</p>
+                                        @if ($reservation->user->phone)
+                                            <p>{{ $reservation->user->phone }}</p>
+                                        @endif
+                                        @if ($reservation->tables->isNotEmpty())
+                                            <p class="text-[#D4AF37] font-semibold">
+                                                Meja: {{ implode(', ', $reservation->table_numbers) }}
+                                            </p>
+                                        @endif
+                                        @if ($reservation->payment_method)
+                                            <p class="text-green-300">
+                                                Bayar: {{ strtoupper($reservation->payment_method) }}
+                                            </p>
+                                        @endif
+                                    </div>
+
+                                    <!-- Action Buttons -->
+                                    <div class="flex gap-2">
+                                        @if ($status === 'pending')
+                                            <form method="POST"
+                                                action="{{ route('admin.reservations.reject', $reservation->id) }}"
+                                                class="flex-1">
+                                                @csrf
+                                                <button type="submit"
+                                                    onclick="return confirm('Yakin ingin menolak reservasi ini?')"
+                                                    class="w-full bg-red-600 text-white py-2 rounded font-semibold hover:bg-red-700">
+                                                    Tolak
+                                                </button>
+                                            </form>
+                                            <button type="button" onclick="showTableSelection({{ $reservation->id }})"
+                                                class="flex-1 bg-[#D4AF37] text-[#1a1a1a] py-2 rounded font-semibold hover:bg-yellow-500">
+                                                Terima Manual
+                                            </button>
+                                        @elseif($status === 'rejected')
+                                            <form method="POST"
+                                                action="{{ route('admin.reservations.reprocess', $reservation->id) }}"
+                                                class="flex-1">
+                                                @csrf
+                                                <button type="submit"
+                                                    class="w-full bg-blue-600 text-white py-2 rounded font-semibold hover:bg-blue-700">
+                                                    Proses Ulang
+                                                </button>
+                                            </form>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+            @endforeach
+
+            @if ($reservations->isEmpty())
+                <div class="bg-[#2a2a2a] rounded-lg p-8 text-center">
+                    <p class="text-gray-400">Tidak ada reservasi untuk tanggal ini</p>
+                </div>
+            @endif
+
+            <!-- Table Schedule Grid -->
+            <div class="mt-8">
+                <h2 class="text-xl font-bold text-[#D4AF37] mb-4">Jadwal Meja</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                     @php
-                        $occupiedSlotIds = $table->getOccupiedSlotIds($selectedDate);
+                        $timeSlots = \App\Models\SlotTime::where('date', $selectedDate)->orderBy('start_time')->get();
                     @endphp
 
-                    <div class="bg-[#F5E6A3] text-[#1a1a1a] rounded-lg p-3">
-                        <h5 class="font-bold text-center mb-2">Meja Nomor {{ $table->number }}</h5>
-                        @foreach ($timeSlots as $slot)
-                            @php
-                                $isOccupied = in_array($slot->id, $occupiedSlotIds);
-                            @endphp
-                            <div
-                                class="text-xs text-center py-1 mb-1 rounded {{ $isOccupied ? 'bg-[#8B0000] text-white' : 'bg-[#F5E6A3] text-[#8B0000] border border-[#8B0000]' }}">
-                                {{ \Carbon\Carbon::parse($slot->start_time)->format('H:i') }} -
-                                {{ \Carbon\Carbon::parse($slot->end_time)->format('H:i') }}
-                            </div>
-                        @endforeach
-                    </div>
-                @empty
-                    <div class="col-span-full bg-[#2a2a2a] rounded-lg p-8 text-center">
-                        <p class="text-gray-400">Belum ada meja yang terdaftar</p>
-                    </div>
-                @endforelse
+                    @forelse($tables as $table)
+                        @php
+                            $occupiedSlotIds = $table->getOccupiedSlotIds($selectedDate);
+                        @endphp
+
+                        <div class="bg-[#F5E6A3] text-[#1a1a1a] rounded-lg p-3">
+                            <h5 class="font-bold text-center mb-2">Meja {{ $table->number }}</h5>
+                            @foreach ($timeSlots as $slot)
+                                @php
+                                    $isOccupied = in_array($slot->id, $occupiedSlotIds);
+                                @endphp
+                                <div
+                                    class="text-xs text-center py-1 mb-1 rounded {{ $isOccupied ? 'bg-[#8B0000] text-white' : 'bg-[#F5E6A3] text-[#8B0000] border border-[#8B0000]' }}">
+                                    {{ \Carbon\Carbon::parse($slot->start_time)->format('H:i') }} -
+                                    {{ \Carbon\Carbon::parse($slot->end_time)->format('H:i') }}
+                                </div>
+                            @endforeach
+                        </div>
+                    @empty
+                        <div class="col-span-full bg-[#2a2a2a] rounded-lg p-8 text-center">
+                            <p class="text-gray-400">Belum ada meja yang terdaftar</p>
+                        </div>
+                    @endforelse
+                </div>
             </div>
         </div>
     </div>
@@ -108,7 +196,7 @@
     <div id="tableSelectionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
         <div class="bg-[#1a1a1a] rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-xl font-bold text-[#D4AF37]">TERIMA RESERVASI MEJA</h3>
+                <h3 class="text-xl font-bold text-[#D4AF37]">TERIMA RESERVASI MANUAL</h3>
                 <button onclick="hideTableSelection()" class="text-[#D4AF37] text-2xl">×</button>
             </div>
 

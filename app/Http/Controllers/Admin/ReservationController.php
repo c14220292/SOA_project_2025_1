@@ -5,20 +5,31 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Reservation;
 use App\Models\Table;
+use App\Services\ReservationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ReservationController extends Controller
 {
+    protected $reservationService;
+
+    public function __construct(ReservationService $reservationService)
+    {
+        $this->reservationService = $reservationService;
+    }
+
     public function index(Request $request)
     {
         $selectedDate = $request->get('date', now()->format('Y-m-d'));
 
+        // Get all reservations for the selected date (not just pending)
         $reservations = Reservation::with(['user', 'slotTimes', 'tables'])
             ->where('reservation_date', $selectedDate)
-            ->where('status', 'pending')
             ->latest()
             ->get();
+
+        // Group reservations by status
+        $groupedReservations = $reservations->groupBy('status');
 
         $tables = Table::with(['reservations' => function ($query) use ($selectedDate) {
             $query->where('reservation_date', $selectedDate)
@@ -26,9 +37,21 @@ class ReservationController extends Controller
                 ->with('slotTimes');
         }])->orderBy('number')->get();
 
-        return view('pages.admin.reservation.index', compact('reservations', 'tables', 'selectedDate'));
+        // Get reservation statistics
+        $stats = $this->reservationService->getReservationStats($selectedDate);
+
+        return view('pages.admin.reservation.index', compact(
+            'reservations',
+            'groupedReservations',
+            'tables',
+            'selectedDate',
+            'stats'
+        ));
     }
 
+    /**
+     * Manual approval (for edge cases)
+     */
     public function approve(Request $request, Reservation $reservation)
     {
         // Calculate required tables based on guest count
@@ -68,16 +91,19 @@ class ReservationController extends Controller
 
             DB::commit();
 
-            return back()->with('success', 'Reservasi berhasil dikonfirmasi dan meja telah ditetapkan.');
+            return back()->with('success', 'Reservasi berhasil dikonfirmasi secara manual dan meja telah ditetapkan.');
         } catch (\Exception $e) {
             DB::rollback();
             return back()->withErrors(['error' => 'Terjadi kesalahan saat mengkonfirmasi reservasi.']);
         }
     }
 
+    /**
+     * Manual rejection
+     */
     public function reject(Reservation $reservation)
     {
-        if ($reservation->status !== 'pending') {
+        if (!in_array($reservation->status, ['pending', 'confirmed'])) {
             return back()->withErrors(['error' => 'Reservasi sudah diproses sebelumnya.']);
         }
 
@@ -86,9 +112,12 @@ class ReservationController extends Controller
         return back()->with('success', 'Reservasi berhasil ditolak.');
     }
 
+    /**
+     * Show table selection for manual assignment
+     */
     public function showTableSelection(Reservation $reservation)
     {
-        if ($reservation->status !== 'pending') {
+        if (!in_array($reservation->status, ['pending', 'rejected'])) {
             return back()->withErrors(['error' => 'Reservasi sudah diproses sebelumnya.']);
         }
 
@@ -101,5 +130,26 @@ class ReservationController extends Controller
             });
 
         return view('pages.admin.reservation.table-selection', compact('reservation', 'availableTables'));
+    }
+
+    /**
+     * Reprocess reservation (for rejected ones)
+     */
+    public function reprocess(Reservation $reservation)
+    {
+        if ($reservation->status !== 'rejected') {
+            return back()->withErrors(['error' => 'Hanya reservasi yang ditolak yang dapat diproses ulang.']);
+        }
+
+        // Reset status to pending and try auto-processing again
+        $reservation->update(['status' => 'pending']);
+
+        $result = $this->reservationService->processReservationAutomatically($reservation);
+
+        if ($result['success']) {
+            return back()->with('success', 'Reservasi berhasil diproses ulang dan dikonfirmasi otomatis.');
+        } else {
+            return back()->with('info', 'Reservasi tetap tidak dapat dikonfirmasi otomatis. ' . $result['message']);
+        }
     }
 }

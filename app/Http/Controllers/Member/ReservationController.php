@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Reservation;
 use App\Models\SlotTime;
 use App\Models\Table;
+use App\Services\ReservationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Carbon;
@@ -13,6 +14,13 @@ use Illuminate\Support\Facades\DB;
 
 class ReservationController extends Controller
 {
+    protected $reservationService;
+
+    public function __construct(ReservationService $reservationService)
+    {
+        $this->reservationService = $reservationService;
+    }
+
     /**
      * Daftar riwayat reservasi member.
      */
@@ -81,15 +89,20 @@ class ReservationController extends Controller
             ->orderBy('start_time')
             ->get();
 
-        // Calculate available tables for each slot
+        // Calculate available tables for each slot using the service
         $availableSlots = [];
         foreach ($slotTimes as $slot) {
-            $availableTables = $slot->getAvailableTablesCount($reservationDate);
-            if ($availableTables >= $tableCount) {
+            $availability = $this->reservationService->checkTableAvailability(
+                $reservationDate,
+                [$slot->id],
+                $tableCount
+            );
+
+            if ($availability['can_accommodate']) {
                 $availableSlots[] = [
                     'id' => $slot->id,
                     'time' => $slot->formatted_time,
-                    'available_tables' => $availableTables
+                    'available_tables' => $availability['available_count']
                 ];
             }
         }
@@ -145,7 +158,7 @@ class ReservationController extends Controller
     }
 
     /**
-     * Simpan reservasi ke database.
+     * Simpan reservasi ke database dan proses otomatis.
      */
     public function store(Request $request)
     {
@@ -164,6 +177,7 @@ class ReservationController extends Controller
             $dpAmount = $request->table_count * $slotCount * 15000;
             $minimalCharge = $request->table_count * 50000;
 
+            // Create reservation with pending status initially
             $reservation = Reservation::create([
                 'user_id' => 1,
                 'reservation_date' => $request->reservation_date,
@@ -178,16 +192,25 @@ class ReservationController extends Controller
             // Attach slot times
             $reservation->slotTimes()->sync($request->slot_time_ids);
 
+            // Process reservation automatically
+            $result = $this->reservationService->processReservationAutomatically($reservation);
+
             // Clear session data after successful creation
             session()->forget(['reservation_step1', 'reservation_step2']);
 
             DB::commit();
 
-            return redirect()->route('member.reservations.status', $reservation->id)
-                ->with('success', 'Reservasi berhasil dibuat dan menunggu konfirmasi admin.');
+            if ($result['success']) {
+                return redirect()->route('member.reservations.status', $reservation->id)
+                    ->with('success', $result['message']);
+            } else {
+                return redirect()->route('member.reservations.status', $reservation->id)
+                    ->with('error', $result['message']);
+            }
         } catch (\Exception $e) {
             DB::rollback();
-            return redirect()->route('member.reservations.index')->withErrors(['error' => 'Terjadi kesalahan saat membuat reservasi.']);
+            return redirect()->route('member.reservations.index')
+                ->withErrors(['error' => 'Terjadi kesalahan saat membuat reservasi.']);
         }
     }
 
@@ -260,7 +283,7 @@ class ReservationController extends Controller
         }
 
         if ($reservation->status !== 'confirmed') {
-            return back()->withErrors(['error' => 'Reservasi belum dikonfirmasi admin.']);
+            return back()->withErrors(['error' => 'Reservasi belum dikonfirmasi.']);
         }
 
         // Simulate payment process

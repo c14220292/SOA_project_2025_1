@@ -51,6 +51,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/', [AdminReservationController::class, 'index'])->name('index');
         Route::post('/{reservation}/approve', [AdminReservationController::class, 'approve'])->name('approve');
         Route::post('/{reservation}/reject', [AdminReservationController::class, 'reject'])->name('reject');
+        Route::post('/{reservation}/reprocess', [AdminReservationController::class, 'reprocess'])->name('reprocess');
         Route::get('/{reservation}/table-selection', [AdminReservationController::class, 'showTableSelection'])->name('table-selection');
     });
 
