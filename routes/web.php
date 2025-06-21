@@ -36,6 +36,7 @@ Route::prefix('member')->name('member.')->group(function () {
         Route::post('/confirm', [MemberReservationController::class, 'confirm'])->name('confirm');
         Route::post('/', [MemberReservationController::class, 'store'])->name('store');
         Route::get('/{reservation}/status', [MemberReservationController::class, 'status'])->name('status');
+        Route::get('/{reservation}/status-check', [MemberReservationController::class, 'statusCheck'])->name('status-check');
         Route::get('/{reservation}/confirmed', [MemberReservationController::class, 'confirmed'])->name('confirmed');
         Route::post('/{reservation}/cancel', [MemberReservationController::class, 'cancel'])->name('cancel');
         Route::post('/{reservation}/pay', [MemberReservationController::class, 'pay'])->name('pay');
